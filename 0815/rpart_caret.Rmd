@@ -1,0 +1,172 @@
+# Classification
+### Decision Tree - using churn data in C50 package
+```{R}
+#install.packages("C50")
+library(C50)
+
+data(churn)
+str(churnTrain)
+
+names(churnTrain) %in% c("state", "area_code", "account_length")
+!names(churnTrain) %in% c("state", "area_code", "account_length")
+#選擇建模變數
+variable.list = !names(churnTrain) %in% c('state','area_code','account_length')
+churnTrain=churnTrain[,variable.list]
+churnTest=churnTest[,variable.list]
+
+str(churnTrain)
+
+#sample
+?sample
+sample(1:10)
+sample(1:10, size = 5) #replace=F 取後不放回（預設）
+sample(c(0,1), size= 10, replace = T) #replace=T 取後放回
+sample.int(20, 12) # 兩個參數都要放整數，此例為取1:20中的12個不重複樣本
+
+set.seed(2) #set.seed() 讓下一次抽樣結果相同
+#把資料分成training data 和 validation data
+ind<-sample(1:2, size=nrow(churnTrain), replace=T, prob=c(0.7, 0.3))
+trainset=churnTrain[ind==1,]
+testset=churnTrain[ind==2,]
+```
+
+### rpart
+```{R}
+#install.packages('rpart')
+library('rpart')
+#使用rpart(CART)建立決策樹模型
+?rpart
+con = rpart.control(minsplit=20,cp=0.01)#rpart(model,data,control=rpart.control())
+#minsplit：每一個node最少要幾個data
+#minbucket：在末端的node上最少要幾個data
+#cp：complexity parameter. (決定精度的參數)
+#maxdepth：Tree的深度
+?rpart.control
+
+churn.rp<-rpart(churn ~., data=trainset,control = con)#churn.rp<-rpart(churn ~ total_day_charge + international_plan, data=trainset)
+#(formula, data, weights, subset, na.action = na.rpart, method, model = FALSE, x = FALSE, y = TRUE, parms, control, cost, …)
+#formula：迴歸方程形式：例如 y～x1+x2+x3。 
+#data：資料：包含前面方程中變數的資料框(dataframe)。 
+#na.action：缺失資料的處理辦法：預設辦法是刪除因變數缺失的觀測而保留自變數缺失的觀測。 
+#method：根據樹末端的資料型別選擇相應變數分割方法，本引數有四種取值：連續型 =>“anova”;離散型 =>“class”；計數型(泊松過程) =>“poisson”；生存分析型]“exp”。程式會根據因變數的型別自動選擇方法，但一般情況下最好還是指明本引數，以便讓程式清楚做哪一種樹模型。 
+#parms：用來設定三個引數：先驗概率、損失矩 陣、分類純度的度量方法。 
+#control：控制每個節點上的最小樣本量、交叉驗證的次數、複雜性參量：即cp:complexity pamemeter，這個引數意味著對每一步拆分,模型的擬合優度必須提高的程度，等等。
+
+churn.rp
+s = summary(churn.rp)
+s$cptable
+#CP=TraningError下降量/子樹葉節點個數（複雜度）=(R(t)-R(T))/(|T|-1)->邊際效用
+
+#畫出決策樹
+par(mfrow=c(1,1))
+?plot.rpart
+plot(churn.rp, uniform=TRUE,branch = 0.6, margin=0.1)#plot(data,uniform=T分支長度相等,branch=分支角度,margin=)
+text(churn.rp, all=TRUE, use.n=TRUE, cex=0.7)
+
+library('rpart.plot')
+rpart.plot(churn.rp) #rpart.plot() 較好看的繪圖
+```
+
+### Prune
+```{R}
+printcp(churn.rp)#CP=TraningError下降量/子樹葉節點個數（複雜度）=(R(t)-R(T))/(|T|-1)->邊際效用
+plotcp(churn.rp)
+
+#找出minimum cross-validation errors
+min_row = which.min(churn.rp$cptable[,"xerror"])
+churn.cp = churn.rp$cptable[min_row, "CP"]
+#將churn.cp設為臨界值來修剪樹
+prune.tree=prune(churn.rp, cp=churn.cp)
+plot(prune.tree, uniform=TRUE,branch = 0.6, margin=0.1)
+text(prune.tree, all=TRUE, use.n=TRUE, cex=0.7)
+
+test_tree = prune(churn.rp,cp=0.06)
+plot(test_tree, margin=0.1)
+text(test_tree, all=TRUE, use.n=TRUE, cex=0.7)
+
+predictions <-predict(prune.tree, testset, type='class')
+table(predictions,testset$churn)
+
+#install.packages('caret')
+#install.packages('e1071')
+library('caret')
+library('e1071')
+confusionMatrix(table(predictions, testset$churn))
+mat=matrix(data=c('TP','FN','FP','TN'),nrow=2)
+colnames(mat)=c("t_yes","t_no") #真實
+rownames(mat)=c("p_yes","p_no") #預測
+mat
+#(y,y_hat)=(y,y)=>TP
+#(y,y_hat)=(y,n)=>FN
+#(y,y_hat)=(n,y)=>FP
+#(y,y_hat)=(n,n)=>TN
+#Accuracy=(TP+TN)/(TP+FP+TN+FN)
+#Precision=Pos Pred Value=TP/(TP+FP)
+#Recall=TPR=Sensitivity=TP/(TP+FN) ->ROC
+#TNR=specificity=TN/(FP+TN)
+#FPR=1-SPC=FP/(FP+TN) ->ROC
+?confusionMatrix
+```
+
+### use caret package
+```{R}
+#install.packages("caret")
+library(caret)
+control=trainControl(method="repeatedcv", number=10, repeats=3)#trainControl() method=repeatedcv重複cv
+model =train(churn~., data=churnTrain, method="rpart", trControl=control)#model=train() method=驗證方法，預設randomForest
+
+predictions = predict(model,churnTest)
+table(predictions,churnTest$churn)
+confusionMatrix(table(predictions,churnTest$churn))
+
+#ROC曲線下面積愈大，模型愈好
+control=trainControl(method="repeatedcv", number=10, repeats=3,summaryFunction = prSummary,classProbs=T)
+model =train(churn~., data=churnTrain, method="rpart", trControl=control)
+
+#getModelInfo('套件')列出套件rpart的cp
+tune_funs = expand.grid(cp=seq(0,0.1,0.01)) #tuneGrid=expand,grid(cp for rpart，seq()內一一測試數值) 可調整(tune)參數
+model =train(churn~., data=churnTrain, method="rpart", trControl=control,tuneGrid=tune_funs)
+
+model
+predictions = predict(model, churnTest)
+confusionMatrix(table(predictions,churnTest$churn))
+```
+
+### caret 套件使用說明
+```{R}
+# 查詢caret package 有實作的所有演算法
+names(getModelInfo())
+# 查詢caret package 有沒有實作rpart演算法
+names(getModelInfo())[grep('rpart',names(getModelInfo()))]
+# 查詢rpart model資訊
+getModelInfo('rpart')
+# 查詢rpart model可以tune的parameters
+getModelInfo('rpart')$rpart$parameters
+```
+
+### find importance variable
+```{R}
+library('caret')
+importance = varImp(model, scale=T)
+importance
+plot(importance)
+```
+
+### ROC
+- https://www.youtube.com/watch?v=OAl6eAyP-yo
+- http://www.navan.name/roc/
+
+```{R}
+#install.packages("ROCR")
+library(ROCR)
+predictions <-predict(model, churnTest, type="prob")
+head(predictions)
+pred.to.roc<-predictions[, "yes"]
+head(pred.to.roc)
+pred.rocr<-prediction(pred.to.roc, churnTest$churn)
+pred.rocr
+perf.rocr<-performance(pred.rocr, measure ="auc")
+perf.tpr.rocr<-performance(pred.rocr, measure="tpr",x.measure = "fpr")
+plot(perf.tpr.rocr,main=paste("AUC:",(perf.rocr@y.values)))
+```
+

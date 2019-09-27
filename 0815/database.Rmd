@@ -1,0 +1,81 @@
+## alter mysql 8.0 password encryption
+- https://stackoverflow.com/questions/49194719/authentication-plugin-caching-sha2-password-cannot-be-loaded
+
+```
+ALTER USER 'yourusername'@'localhost' IDENTIFIED WITH mysql_native_password BY 'youpassword';
+
+CREATE DATABASE test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+### dplyr連接資料庫範例(mysql)
+- 可改用 RMariaDB package
+
+```{R}
+
+#install.packages('dplyr')
+library(dplyr)
+
+#install.packages('RMariaDB') #RDB套件
+#install.packages('dbplyr') #dplyr--DB連結
+library('dbplyr')
+library('RMariaDB')
+
+data("iris")
+##iris example
+conn = dbConnect(MariaDB(),dbname='test',
+                 host='127.0.0.1', #local host
+                 port=3306,
+                 user='root',
+                 password='ilave300')
+#使用workbranch開放加密權限
+#ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'ilave300'; database的SQL指令
+#CREATE DATABASE test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; 新的測試database，建立時先決定編碼
+db_drop_table(conn,'iris') #若已有此DB先刪除
+
+copy_to(conn,iris, #將data.frame放進資料庫
+        temporary = F) #commit永久新增資料
+
+tbl(conn,"iris") %>% #
+  select(starts_with('Sepal'),'Species') %>%
+  group_by(Species) %>%
+  summarise_at(.funs=funs(mean(.,na.rm=T),sd(.,na.rm=T)),.vars=vars(starts_with('Sepal'))) %>%
+  collect() #commit更改資料
+
+#依照指令進行資料庫的操作後，再把結果直接回傳給R。
+dbGetQuery(conn,'select * from iris') %>% filter(Species == 'setosa')
+dbGetQuery(conn,'select `Sepal.Length` from iris')
+
+dbListTables(conn)
+
+
+setwd('E:/R/riii')
+load('Statistics/applenews.RData')
+str(applenews)
+applenews = applenews[,-1]
+
+## applenews example
+copy_to(conn,applenews,temporary = F,overwrite=T)
+tbl(conn,"applenews")
+dbSendQuery(conn, "SET NAMES utf8");#函數則會先把結果儲存於rs物件中，再由使用者一段一段的取出。
+tbl(conn,"applenews")
+category_stat = tbl(conn,"applenews") %>%
+  group_by(category) %>%
+  summarise_at(.funs=funs(min(.,na.rm=T),max(.,na.rm=T),mean(.,na.rm=T)), .vars=vars(matches('clicked'))) %>%
+  arrange(desc(mean)) %>%
+  collect()
+```
+### use mongolite to connect mongodb (參考)
+- https://jeroen.github.io/mongolite/index.html
+
+```{R}
+#install.packages("mongolite")
+library("mongolite")
+
+m=mongo(collection = 'test',db = 'test',url='mongodb://localhost:27017')
+m$drop()
+m$insert(iris)
+m$count()
+
+m$find()
+m$find(query='{"Species":"virginica"}',fields = '{"Sepal_Length": true,"Sepal_Width": true}',limit = 5,sort = '{"Sepal_Length": 1}')
+```

@@ -1,0 +1,218 @@
+```{R}
+setwd('E:/R/riii')
+load("E:/R/riii/Statistics/appledaily.RData")
+str(appledaily)
+as.POSIXct(appledaily[1,'dt'],format='%Y年%m月%d日%H:%M') #%H:24hr制：%h:12hr制
+
+#比較as.POSIX() 和 as.Date()
+unclass(as.POSIXct(appledaily$dt,format = '%Y年%m月%d日%H:%M')) #電腦時間，無時區問題
+as.Date(appledaily$dt,format = '%Y年%m月%d日%H:%M')
+unclass(as.Date(appledaily$dt,format = '%Y年%m月%d日%H:%M'))
+
+
+#比較as.POSIXct() 和 as.POSIXlt()
+t1 = as.POSIXct(appledaily$dt,format = '%Y年%m月%d日%H:%M')
+class(t1)
+head(unclass(t1))
+
+t2 = as.POSIXlt(appledaily$dt,format = '%Y年%m月%d日%H:%M') #可用'$'取得其中元素（$year電腦起始年份為1900,$mon起始月為0需自行+1,$hour,$min,......）
+table(t1$hour) #取得各時間發文數統計
+class(t2)
+unclass(t2)
+
+strptime(appledaily$dt,'%Y年%m月%d日%H:%M')
+
+
+appledaily$dt = as.POSIXct(appledaily$dt,format = '%Y年%m月%d日%H:%M')
+
+str(appledaily)
+```
+
+### lubridate package
+- https://r4ds.had.co.nz/dates-and-times.html
+```{R}
+#install.packages('lubridate')
+library(lubridate)
+
+#Extracting information
+now_date = now() #取得現在時間
+
+year(now_date)
+month(now_date,label=T) #label轉換中文顯示
+day(now_date)
+hour(now_date)
+minute(now_date)
+second(now_date)
+wday(now_date,label=T) #label轉換中文顯示
+
+#Parsing dates and times
+ymd(20190129) #年月日
+mdy(01292019) #月日年
+dmy(29012019) #日月年
+
+ymd('2019/01/29')
+ymd('2019.01.29')
+
+ymd('2019.01.29')
+ymd_hm('2019/1/29 14:40',tz='Asia/Taipei')
+with_tz(ymd_hm('2019/1/29 14:40',tz='Asia/Taipei'),tzone='America/Los_Angeles') #轉換時區
+
+appledaily$dt = ymd_hm(appledaily$dt)
+```
+
+
+### 擷取點擊數中數值部分
+"." => 0~多個
+\d.
+"+" => 1~多個
+\d+
+"?" => 0 or 1
+\d?
+
+- https://r4ds.had.co.nz/strings.html
+```{R}
+#方法一：利用sub函數取代
+tmp = sub("人氣\\(","",appledaily$clicked[1]) #sub(被取代,取代後,標的)；\\跳脫（失效）
+tmp2 = sub("\\)","",tmp) #取得數值
+click = as.numeric(tmp2) #轉換為數字
+#"\d"零到九，"\s"字元，"."0~n，"+"1~n，"?"0 or 1
+clicked = sub('\\)','',sub('人氣\\(','',appledaily$clicked))
+clicked = as.integer(clicked)
+head(clicked)
+
+#方法二：使用stringr套件的str_match()
+library(stringr)
+?str_match
+str_match(appledaily$clicked,"人氣\\((\\d+)\\)") #尋找符合的項目
+str_match(appledaily$clicked,"人氣\\((\\d+)\\)")[,2] #去除多餘項目
+clicked = as.integer(str_match(appledaily$clicked,"人氣\\((\\d+)\\)")[,2])
+appledaily$clicked = clicked #取代回原資料
+head(clicked)
+appledaily
+```
+
+### 其他常見字串處理函式
+```{R}
+#利用gsub函數取代
+s = "aaa bbb ccc aaa bbb aaa"
+gsub("aaa","",s)
+
+#grep()  ==> return index
+test_str = c('abcd','bcd','cde')
+grep('a',test_str)
+test_str[grep('a',test_str)]
+
+grep('中國',appledaily$title)
+appledaily[grep('中國',appledaily$title[1:5]),]
+
+#grepl() ==> return boolean 
+grepl('a',test_str)
+test_str[grepl('a',test_str)]
+
+#strsplit() ==> 字串分割
+c('abc-def','ddd-ggg')
+splited = strsplit(c('abc-def','ddd-ggg'),'-')
+splited
+class(splited) #list
+unlist(splited)
+class(unlist(splited)) #vector.char
+### 取出list裡面部分元素
+sapply(splited,function(e){e[1]}) #使用函式
+unlist(splited)[seq(from=1,to=4,by=2)]
+
+#substring() ==> 取得部份字串
+test_s = 'abcdef'
+nchar(test_s)
+substring(test_s,2,nchar('abcdef')-1)
+```
+
+
+```{R}
+table(appledaily$category)
+#整理資料
+appledaily$category[appledaily$category == '國際","LA","SF","NY","US'] = "國際"
+appledaily$category[appledaily$category == '國際","SF","US'] = "國際"
+table(appledaily$category)
+```
+
+### 儲存處理過的檔案
+```{R}
+applenews = appledaily
+save(applenews,'./Statistics/applenews.RData')
+```
+
+### 遺失值處理(missing value)
+```{R}
+applenews = appledaily
+#sample(1:10,size=5) 從1~10中隨機抽5個
+idx= sample(1:nrow(applenews),size=30) #隨機30個遺失子
+applenews[idx,'clicked'] = NA
+
+
+#找尋遺失值
+is.na(applenews)
+sum(is.na(applenews$clicked)) #加總是否遺失子的布林值
+
+sapply(names(applenews),function(e){ sum(is.na(applenews[,e])) >0 }) #透過函數找出資料中有多少遺失子
+
+cleaned_data = applenews[!is.na(applenews$clicked),]
+
+#移除missing value
+complete.cases(applenews)
+cleaned_data = applenews[complete.cases(applenews),]
+str(cleaned_data)
+
+#以全體平均填補
+applenews = appledaily
+applenews[idx,'clicked'] = NA
+
+mean_clicked = as.integer(mean(applenews$clicked,na.rm=T))
+applenews$clicked[is.na(applenews$clicked)] = mean_clicked
+
+sum(is.na(applenews$clicked))
+```
+
+### 遺失值處理(missing value)(續)
+```{R}
+#以類別平均填補
+applenews = appledaily
+applenews[idx,'clicked'] = NA
+
+cat_means = tapply(applenews$clicked,applenews$category,function(e){as.integer(mean(e,na.rm=T))})
+cat_means
+
+for(i in names(cat_means)){
+  applenews[applenews$category == i & is.na(applenews$clicked),'clicked'] = cat_means[i]
+} #遺失子=平均數（取代）
+
+sum(is.na(applenews$clicked))
+```
+
+### mice
+```{R}
+#install.packages('mice')
+library(mice)
+data(iris)
+na_list = sample(1:nrow(iris),15)
+iris[na_list,'Sepal.Length'] = NA
+
+mice.data <- mice(data=iris,m = 3,method = "cart") #避免極端值，重複建立3次（預設5次）
+
+complete(mice.data,1)
+
+complete(mice.data,1)[na_list,'Sepal.Length']
+complete(mice.data,2)[na_list,'Sepal.Length']
+complete(mice.data,3)[na_list,'Sepal.Length']
+
+##比較各模型預測結果是否穩定(mean接近0,var很小)
+diff1 = complete(mice.data,1)[na_list,'Sepal.Length'] - complete(mice.data,2)[na_list,'Sepal.Length']
+
+diff2 = complete(mice.data,1)[na_list,'Sepal.Length'] - complete(mice.data,3)[na_list,'Sepal.Length']
+
+diff3 = complete(mice.data,2)[na_list,'Sepal.Length'] - complete(mice.data,3)[na_list,'Sepal.Length']
+
+mean(c(diff1,diff2,diff3))
+var(c(diff1,diff2,diff3)) #變異數極小
+
+complete(mice.data,1)
+```

@@ -1,0 +1,82 @@
+### k-means
+```{R}
+customer=read.csv('E:/R/riii/data/customer.csv',header=TRUE)
+customer_s =scale(customer[,-1]) #數值變數作正規化
+set.seed(22)
+fit =kmeans(customer_s, centers=4) #kmeans(標準化後距離,k數量)
+?kmeans
+
+barplot(t(fit$centers), beside =TRUE,xlab="cluster", ylab="value")
+?barplot
+fit
+fit$centers #常用資料集fit$cluster, fit$centers, fit$withinss, fit$totss
+
+customer[fit$cluster == 1,]
+```
+
+### 投影至二維空間,繪製分群結果
+```{R}
+plot(customer[,-1],col=fit$cluster)
+
+#install.packages("cluster")
+library(cluster)
+clusplot(customer, fit$cluster, color=TRUE, shade=TRUE) #降維繪圖
+
+#了解component 成分為何
+pca =princomp(customer_s) #降維，減少變數
+summary(pca) #comp.n線性組合產生
+pca$loadings
+```
+
+### Evaluating model
+```{R}
+#silhouette
+library('cluster')
+par(mfrow= c(1,1))
+set.seed(22)
+km =kmeans(customer_s, 4)
+kms=silhouette(km$cluster,dist(customer_s))#Silhouette=(群間平均距離-群內平均距離)/最大點距離；群間平均距離愈大愈好，群內平均距離愈小愈好
+summary(kms)
+plot(kms)
+```
+
+### 選擇k-means最佳k值
+```{R}
+nk=2:10 #2~10
+
+# avg silhouette
+s=summary(silhouette(kmeans(coustomer_s,centers = 4)$cluster,dist(coustomer_s)))$avg.width #k=4
+SW = sapply(nk,function(k){ #迴圈選定最大值k=4
+  set.seed(22); summary(silhouette(kmeans(customer_s,centers=k)$cluster,dist(customer_s)))$avg.width
+}) #Average Silhouette Width為主，SW數值最大
+
+plot(x=nk,y=SW,type='l')
+
+#within sum of squares
+set.seed(22)
+WSS =sapply(nk, function(k){set.seed(22);kmeans(customer_s, centers=k)$tot.withinss}) #Within sum of squares為輔，WSS斜率最大
+WSS
+plot(x=nk, y=WSS, type="l", xlab="number of k", ylab="within sum of squares")
+```
+
+### model comparison比較不同分群演算法
+```{R}
+library(fpc)
+single_c=hclust(dist(customer_s), method="single")
+hc_single=cutree(single_c, k =4)
+
+complete_c=hclust(dist(customer_s), method="complete")
+hc_complete=cutree(complete_c, k =4)
+
+set.seed(22)
+km =kmeans(customer_s, 4)
+
+cs=cluster.stats(dist(customer_s),km$cluster)
+cs[c("within.cluster.ss","avg.silwidth")]
+
+q =sapply( #
+  list(kmeans=km$cluster, 
+       hc_single=hc_single, 
+       hc_complete=hc_complete), function(c)cluster.stats(dist(customer_s),c)[c("within.cluster.ss","avg.silwidth")])
+q #within.cluster.ss最小，avg.silwidth最大
+```
